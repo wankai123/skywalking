@@ -63,6 +63,10 @@ public class ZipkinReceiverConfig extends ModuleConfig {
 
     private int kafkaHandlerThreadPoolQueueSize;
 
-
+    /**
+     * Whether to hide the endpoint IP address in Zipkin spans. Default is false.
+     */
+    private boolean hideLocalEndpointIP = false;
+    private boolean hideRemoteEndpointIP = false;
 }
 

@@ -19,15 +19,15 @@ package org.apache.skywalking.oap.log.analyzer.provider.log.listener;
 
 import com.google.protobuf.Message;
 import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
+import org.apache.skywalking.apm.network.common.v3.KeyStringValuePair;
 import org.apache.skywalking.apm.network.logging.v3.LogData;
 import org.apache.skywalking.apm.network.logging.v3.LogDataBody;
+import org.apache.skywalking.apm.network.logging.v3.LogTags;
 import org.apache.skywalking.apm.network.logging.v3.TraceContext;
 
 import org.apache.skywalking.oap.server.core.analysis.manual.searchtag.TagType;
@@ -45,6 +45,11 @@ import org.apache.skywalking.oap.server.core.query.type.ContentType;
 import org.apache.skywalking.oap.server.core.source.Log;
 import org.apache.skywalking.oap.server.core.source.SourceReceiver;
 import org.apache.skywalking.oap.server.library.module.ModuleManager;
+import org.apache.skywalking.oap.server.mask.InfoMaskModule;
+import org.apache.skywalking.oap.server.mask.InfoMaskRule;
+import org.apache.skywalking.oap.server.mask.masker.JsonMasker;
+import org.apache.skywalking.oap.server.mask.masker.SingleMasker;
+import org.apache.skywalking.oap.server.mask.service.InfoMaskRuleService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,13 +64,14 @@ public class RecordSinkListener implements LogSinkListener {
     private final SourceReceiver sourceReceiver;
     private final NamingControl namingControl;
     private final List<String> searchableTagKeys;
+    private final JsonMasker jsonMasker;
+    private final SingleMasker singleMasker;
     @Getter
     private final Log log = new Log();
 
     @Override
     public void build() {
         sourceReceiver.receive(log);
-        addAutocompleteTags();
     }
 
     @Override
@@ -112,50 +118,55 @@ public class RecordSinkListener implements LogSinkListener {
             log.setContent(body.getYaml().getYaml());
         } else if (body.hasJson()) {
             log.setContentType(ContentType.JSON);
-            log.setContent(body.getJson().getJson());
+            log.setContent(jsonMasker.maskJson(body.getJson().getJson()));
         } else if (extraLog != null) {
             log.setContentType(ContentType.JSON);
-            log.setContent(toJSON(extraLog));
+            log.setContent(jsonMasker.maskJson(toJSON(extraLog)));
         }
         if (logData.getTags().getDataCount() > 0) {
-            log.setTagsRawData(logData.getTags().toByteArray());
+            LogTags logTags = logData.getTags();
+            LogTags.Builder tagsBuilder = LogTags.newBuilder();
+            for (KeyStringValuePair tag : logTags.getDataList()) {
+                boolean isSensitive = singleMasker.isMaskKey(tag.getKey());
+                //if sensitive, mask it in raw data, but do not add it to searchable tags
+                if (!isSensitive) {
+                    tagsBuilder.addData(tag);
+                    if (searchableTagKeys.contains(tag.getKey())) {
+                        final Tag logTag = new Tag(tag.getKey(), tag.getValue());
+                        if (tag.getValue().length() > Tag.TAG_LENGTH || logTag.toString().length() > Tag.TAG_LENGTH) {
+                            if (LOGGER.isDebugEnabled()) {
+                                LOGGER.debug("Log tag : {} length > : {}, dropped", logTag, Tag.TAG_LENGTH);
+                            }
+                            continue;
+                        }
+                        log.getTags().add(logTag);
+                        addAutocompleteTags(logTag);
+                    }
+                } else {
+                    tagsBuilder.addData(KeyStringValuePair.newBuilder().setKey(tag.getKey()).setValue(
+                        singleMasker.maskValue(tag.getValue())).build());
+                }
+            }
+            log.setTagsRawData(tagsBuilder.build().toByteArray());
         }
-        log.getTags().addAll(appendSearchableTags(logData));
         return this;
     }
 
-    private Collection<Tag> appendSearchableTags(LogData.Builder logData) {
-        HashSet<Tag> logTags = new HashSet<>();
-        logData.getTags().getDataList().forEach(tag -> {
-            if (searchableTagKeys.contains(tag.getKey())) {
-                final Tag logTag = new Tag(tag.getKey(), tag.getValue());
-                if (tag.getValue().length()  > Tag.TAG_LENGTH || logTag.toString().length() > Tag.TAG_LENGTH) {
-                    if (LOGGER.isDebugEnabled()) {
-                        LOGGER.debug("Log tag : {} length > : {}, dropped", logTag, Tag.TAG_LENGTH);
-                    }
-                    return;
-                }
-                logTags.add(logTag);
-            }
-        });
-        return logTags;
-    }
-
-    private void addAutocompleteTags() {
-        log.getTags().forEach(tag -> {
-            TagAutocomplete tagAutocomplete = new TagAutocomplete();
-            tagAutocomplete.setTagKey(tag.getKey());
-            tagAutocomplete.setTagValue(tag.getValue());
-            tagAutocomplete.setTagType(TagType.LOG);
-            tagAutocomplete.setTimeBucket(TimeBucket.getMinuteTimeBucket(log.getTimestamp()));
-            sourceReceiver.receive(tagAutocomplete);
-        });
+    private void addAutocompleteTags(Tag tag) {
+        TagAutocomplete tagAutocomplete = new TagAutocomplete();
+        tagAutocomplete.setTagKey(tag.getKey());
+        tagAutocomplete.setTagValue(tag.getValue());
+        tagAutocomplete.setTagType(TagType.LOG);
+        tagAutocomplete.setTimeBucket(TimeBucket.getMinuteTimeBucket(log.getTimestamp()));
+        sourceReceiver.receive(tagAutocomplete);
     }
 
     public static class Factory implements LogSinkListenerFactory {
         private final SourceReceiver sourceReceiver;
         private final NamingControl namingControl;
         private final List<String> searchableTagKeys;
+        private final JsonMasker jsonMasker;
+        private final SingleMasker singleMasker;
 
         public Factory(ModuleManager moduleManager, LogAnalyzerModuleConfig moduleConfig) {
             this.sourceReceiver = moduleManager.find(CoreModule.NAME)
@@ -164,15 +175,25 @@ public class RecordSinkListener implements LogSinkListener {
             this.namingControl = moduleManager.find(CoreModule.NAME)
                                               .provider()
                                               .getService(NamingControl.class);
+            InfoMaskRuleService infoMaskRuleService = moduleManager.find(InfoMaskModule.NAME)
+                                                    .provider()
+                                                    .getService(InfoMaskRuleService.class);
             ConfigService configService = moduleManager.find(CoreModule.NAME)
                                                        .provider()
                                                        .getService(ConfigService.class);
             this.searchableTagKeys = Arrays.asList(configService.getSearchableLogsTags().split(Const.COMMA));
+            this.jsonMasker = new JsonMasker();
+            this.singleMasker = new SingleMasker();
+            InfoMaskRule.LogMaskRule maskRule = infoMaskRuleService.getInfoMaskRule().getLog();
+            maskRule.getJsonContentMaskRules().forEach(rule -> {
+                jsonMasker.addMaskRule(rule.getPath(), rule.getStrategy());
+            });
+            moduleConfig.getLogTagMaskKeys().forEach(singleMasker::addMaskKey);
         }
 
         @Override
         public RecordSinkListener create() {
-            return new RecordSinkListener(sourceReceiver, namingControl, searchableTagKeys);
+            return new RecordSinkListener(sourceReceiver, namingControl, searchableTagKeys, jsonMasker, singleMasker);
         }
     }
 }

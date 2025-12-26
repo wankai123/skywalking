@@ -32,6 +32,7 @@ import org.apache.skywalking.oap.server.library.module.ModuleDefine;
 import org.apache.skywalking.oap.server.library.module.ModuleProvider;
 import org.apache.skywalking.oap.server.library.module.ModuleStartException;
 import org.apache.skywalking.oap.server.library.module.ServiceNotProvidedException;
+import org.apache.skywalking.oap.server.mask.InfoMaskModule;
 
 public class LogAnalyzerModuleProvider extends ModuleProvider {
     @Getter
@@ -96,7 +97,8 @@ public class LogAnalyzerModuleProvider extends ModuleProvider {
     public String[] requiredModules() {
         return new String[] {
             CoreModule.NAME,
-            ConfigurationModule.NAME
-        };
+            ConfigurationModule.NAME,
+            InfoMaskModule.NAME,
+            };
     }
 }

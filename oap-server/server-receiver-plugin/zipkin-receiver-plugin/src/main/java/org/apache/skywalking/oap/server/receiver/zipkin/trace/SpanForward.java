@@ -43,6 +43,11 @@ import org.apache.skywalking.oap.server.core.source.SourceReceiver;
 import org.apache.skywalking.oap.server.library.module.ModuleManager;
 import org.apache.skywalking.oap.server.library.util.CollectionUtils;
 import org.apache.skywalking.oap.server.library.util.StringUtil;
+import org.apache.skywalking.oap.server.mask.InfoMaskModule;
+import org.apache.skywalking.oap.server.mask.InfoMaskRule;
+import org.apache.skywalking.oap.server.mask.InfoMaskRuleLoader;
+import org.apache.skywalking.oap.server.mask.masker.SingleMasker;
+import org.apache.skywalking.oap.server.mask.service.InfoMaskRuleService;
 import org.apache.skywalking.oap.server.receiver.zipkin.SpanForwardService;
 import org.apache.skywalking.oap.server.receiver.zipkin.ZipkinReceiverConfig;
 import zipkin2.Annotation;
@@ -55,22 +60,28 @@ public class SpanForward implements SpanForwardService {
     private final ModuleManager moduleManager;
     private final List<String> searchTagKeys;
     private final long samplerBoundary;
+    private final SingleMasker singleMasker;
     private NamingControl namingControl;
     private SourceReceiver receiver;
     private RateLimiter rateLimiter;
+    private Boolean infoMaskRuleInitialized = false;
+    private InfoMaskRule.ZipkinTraceMaskRule maskRule;
 
     public SpanForward(final ZipkinReceiverConfig config, final ModuleManager manager) {
         this.config = config;
         this.moduleManager = manager;
+        this.singleMasker = new SingleMasker();
         this.searchTagKeys = Arrays.asList(config.getSearchableTracesTags().split(Const.COMMA));
         float sampleRate = (float) config.getSampleRate() / 10000;
         samplerBoundary = (long) (Long.MAX_VALUE * sampleRate);
         if (config.getMaxSpansPerSecond() > 0) {
             this.rateLimiter = RateLimiter.create(config.getMaxSpansPerSecond());
         }
+        this.maskRule = new InfoMaskRule.ZipkinTraceMaskRule();
     }
 
     public List<Span> send(List<Span> spanList) {
+        initInfoMaskRule();
         if (CollectionUtils.isEmpty(spanList)) {
             return Collections.emptyList();
         }
@@ -92,17 +103,37 @@ public class SpanForward implements SpanForwardService {
             }
             zipkinSpan.setLocalEndpointServiceName(getNamingControl().formatServiceName(serviceName));
             if (span.localEndpoint() != null) {
-                zipkinSpan.setLocalEndpointIPV4(span.localEndpoint().ipv4());
-                zipkinSpan.setLocalEndpointIPV6(span.localEndpoint().ipv6());
+                String localEndpointIPv4 = span.localEndpoint().ipv4();
+                String localEndpointIPv6 = span.localEndpoint().ipv6();
+                if (maskRule.isLocalEndpointIPMask()) {
+                    if (StringUtil.isNotEmpty(localEndpointIPv4)) {
+                        localEndpointIPv4 = singleMasker.maskValue(localEndpointIPv4);
+                    }
+                    if (StringUtil.isNotEmpty(localEndpointIPv6)) {
+                        localEndpointIPv6 = singleMasker.maskValue(localEndpointIPv6);
+                    }
+                }
+                zipkinSpan.setLocalEndpointIPV4(localEndpointIPv4);
+                zipkinSpan.setLocalEndpointIPV6(localEndpointIPv6);
                 Integer localPort = span.localEndpoint().port();
                 if (localPort != null) {
                     zipkinSpan.setLocalEndpointPort(localPort);
                 }
             }
             if (span.remoteEndpoint() != null) {
+                String remoteEndpointIPv4 = span.remoteEndpoint().ipv4();
+                String remoteEndpointIPv6 = span.remoteEndpoint().ipv6();
+                if (maskRule.isRemoteEndpointIPMask()) {
+                    if (StringUtil.isNotEmpty(remoteEndpointIPv4)) {
+                        remoteEndpointIPv4 = singleMasker.maskValue(remoteEndpointIPv4);
+                    }
+                    if (StringUtil.isNotEmpty(remoteEndpointIPv6)) {
+                        remoteEndpointIPv6 = singleMasker.maskValue(remoteEndpointIPv6);
+                    }
+                }
                 zipkinSpan.setRemoteEndpointServiceName(getNamingControl().formatServiceName(span.remoteServiceName()));
-                zipkinSpan.setRemoteEndpointIPV4(span.remoteEndpoint().ipv4());
-                zipkinSpan.setRemoteEndpointIPV6(span.remoteEndpoint().ipv6());
+                zipkinSpan.setRemoteEndpointIPV4(remoteEndpointIPv4);
+                zipkinSpan.setRemoteEndpointIPV6(remoteEndpointIPv6);
                 Integer remotePort = span.remoteEndpoint().port();
                 if (remotePort != null) {
                     zipkinSpan.setRemoteEndpointPort(remotePort);
@@ -135,19 +166,29 @@ public class SpanForward implements SpanForwardService {
                 }
                 zipkinSpan.setAnnotations(annotationsJson);
                 for (Map.Entry<String, String> tag : span.tags().entrySet()) {
+                    boolean isSensitive = singleMasker.isMaskKey(tag.getKey());
                     String tagString = tag.getKey() + "=" + tag.getValue();
-                    tagsJson.addProperty(tag.getKey(), tag.getValue());
+                    if (isSensitive) {
+                        String maskedValue = singleMasker.maskValue(tag.getValue());
+                        tagString = tag.getKey() + "=" + maskedValue;
+                        tagsJson.addProperty(tag.getKey(), maskedValue);
+                    } else {
+                        tagsJson.addProperty(tag.getKey(), tag.getValue());
+                    }
+
                     if (tag.getValue().length()  > Tag.TAG_LENGTH || tagString.length() > Tag.TAG_LENGTH) {
                         if (log.isDebugEnabled()) {
                             log.debug("Span tag : {} length > : {}, dropped", tagString, Tag.TAG_LENGTH);
                         }
                         continue;
                     }
-                    query.add(tag.getKey());
-                    query.add(tagString);
+                    if (!isSensitive) {
+                        query.add(tag.getKey());
+                        query.add(tagString);
 
-                    if (searchTagKeys.contains(tag.getKey())) {
-                        addAutocompleteTags(minuteTimeBucket, tag.getKey(), tag.getValue());
+                        if (searchTagKeys.contains(tag.getKey())) {
+                            addAutocompleteTags(minuteTimeBucket, tag.getKey(), tag.getValue());
+                        }
                     }
                 }
                 zipkinSpan.setTags(tagsJson);
@@ -240,5 +281,15 @@ public class SpanForward implements SpanForwardService {
             receiver = moduleManager.find(CoreModule.NAME).provider().getService(SourceReceiver.class);
         }
         return receiver;
+    }
+
+    private void initInfoMaskRule() {
+        if (!infoMaskRuleInitialized) {
+            InfoMaskRuleService infoMaskRuleService = moduleManager.find(InfoMaskModule.NAME).provider().getService(InfoMaskRuleService.class);
+            maskRule = infoMaskRuleService.getInfoMaskRule().getZipkinTrace();
+            maskRule.getTagMaskRules().forEach(tagMaskRule -> {
+                singleMasker.addMaskKey(tagMaskRule.getKey());
+            });
+        }
     }
 }

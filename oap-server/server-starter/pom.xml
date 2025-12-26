@@ -295,10 +295,14 @@
             <artifactId>configuration-nacos</artifactId>
             <version>${project.version}</version>
         </dependency>
-
         <dependency>
             <groupId>org.apache.skywalking</groupId>
             <artifactId>storage-elasticsearch-plugin</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.skywalking</groupId>
+            <artifactId>info-mask-plugin</artifactId>
             <version>${project.version}</version>
         </dependency>
     </dependencies>

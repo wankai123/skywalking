@@ -175,7 +175,7 @@ public class ZipkinSpanRecord extends Record implements BanyanDBTrace {
     private int shared;
     @Setter
     @Getter
-    @Column(name = QUERY, indexOnly = true, length = QUERY_LENGTH)
+    @Column(name = QUERY, length = QUERY_LENGTH)
     @SQLDatabase.AdditionalEntity(additionalTables = {ADDITIONAL_QUERY_TABLE})
     private List<String> query;
 
@@ -285,7 +285,7 @@ public class ZipkinSpanRecord extends Record implements BanyanDBTrace {
         localEndpoint.serviceName(record.getLocalEndpointServiceName());
         if (!StringUtil.isEmpty(record.getLocalEndpointIPV4())) {
             localEndpoint.parseIp(record.getLocalEndpointIPV4());
-        } else {
+        } else if (!StringUtil.isEmpty(record.getLocalEndpointIPV6())) {
             localEndpoint.parseIp(record.getLocalEndpointIPV6());
         }
         localEndpoint.port(record.getLocalEndpointPort());
@@ -295,7 +295,7 @@ public class ZipkinSpanRecord extends Record implements BanyanDBTrace {
         remoteEndpoint.serviceName(record.getRemoteEndpointServiceName());
         if (!StringUtil.isEmpty(record.getRemoteEndpointIPV4())) {
             remoteEndpoint.parseIp(record.getRemoteEndpointIPV4());
-        } else {
+        } else if (!StringUtil.isEmpty(record.getRemoteEndpointIPV6())) {
             remoteEndpoint.parseIp(record.getRemoteEndpointIPV6());
         }
         remoteEndpoint.port(record.getRemoteEndpointPort());

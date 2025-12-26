@@ -28,6 +28,7 @@ import org.apache.skywalking.oap.server.library.module.ModuleStartException;
 import org.apache.skywalking.oap.server.library.module.ServiceNotProvidedException;
 import org.apache.skywalking.oap.server.library.server.http.HTTPServer;
 import org.apache.skywalking.oap.server.library.server.http.HTTPServerConfig;
+import org.apache.skywalking.oap.server.mask.InfoMaskModule;
 import org.apache.skywalking.oap.server.receiver.zipkin.handler.ZipkinSpanHTTPHandler;
 import org.apache.skywalking.oap.server.receiver.zipkin.kafka.KafkaHandler;
 import org.apache.skywalking.oap.server.receiver.zipkin.trace.SpanForward;
@@ -116,7 +117,8 @@ public class ZipkinReceiverProvider extends ModuleProvider {
     public String[] requiredModules() {
         return new String[] {
             TelemetryModule.NAME,
-            CoreModule.NAME
+            CoreModule.NAME,
+            InfoMaskModule.NAME,
         };
     }
 }

@@ -51,6 +51,7 @@
         <zipkin.version>2.24.1</zipkin.version>
         <jackson.version>2.16.0</jackson.version>
         <jackson-databind.version>2.16.0</jackson-databind.version>
+        <jackson-dataformat-yaml.version>2.16.0</jackson-dataformat-yaml.version>
         <simpleclient.version>0.6.0</simpleclient.version>
         <apollo.version>1.8.0</apollo.version>
         <nacos.version>2.3.2</nacos.version>
@@ -351,6 +352,11 @@
                 <version>${jackson-databind.version}</version>
             </dependency>
             <dependency>
+                <groupId>com.fasterxml.jackson.dataformat</groupId>
+                <artifactId>jackson-dataformat-yaml</artifactId>
+                <version>${jackson-dataformat-yaml.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>commons-codec</groupId>
                 <artifactId>commons-codec</artifactId>
                 <version>${commons-codec.version}</version>
@@ -418,29 +424,29 @@
                 </exclusions>
             </dependency>
 
-            <dependency>
-                <groupId>org.apache.skywalking</groupId>
-                <artifactId>banyandb-java-client</artifactId>
-                <version>${banyandb-java-client.version}</version>
-                <exclusions>
-                    <exclusion>
-                        <groupId>io.grpc</groupId>
-                        <artifactId>grpc-netty</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>io.grpc</groupId>
-                        <artifactId>grpc-protobuf</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>io.grpc</groupId>
-                        <artifactId>grpc-stub</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>io.netty</groupId>
-                        <artifactId>netty-tcnative-boringssl-static</artifactId>
-                    </exclusion>
-                </exclusions>
-            </dependency>
+<!--            <dependency>-->
+<!--                <groupId>org.apache.skywalking</groupId>-->
+<!--                <artifactId>banyandb-java-client</artifactId>-->
+<!--                <version>${banyandb-java-client.version}</version>-->
+<!--                <exclusions>-->
+<!--                    <exclusion>-->
+<!--                        <groupId>io.grpc</groupId>-->
+<!--                        <artifactId>grpc-netty</artifactId>-->
+<!--                    </exclusion>-->
+<!--                    <exclusion>-->
+<!--                        <groupId>io.grpc</groupId>-->
+<!--                        <artifactId>grpc-protobuf</artifactId>-->
+<!--                    </exclusion>-->
+<!--                    <exclusion>-->
+<!--                        <groupId>io.grpc</groupId>-->
+<!--                        <artifactId>grpc-stub</artifactId>-->
+<!--                    </exclusion>-->
+<!--                    <exclusion>-->
+<!--                        <groupId>io.netty</groupId>-->
+<!--                        <artifactId>netty-tcnative-boringssl-static</artifactId>-->
+<!--                    </exclusion>-->
+<!--                </exclusions>-->
+<!--            </dependency>-->
 
             <dependency>
                 <groupId>org.apache.curator</groupId>

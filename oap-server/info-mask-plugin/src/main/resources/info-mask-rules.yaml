@@ -1,0 +1,18 @@
+log:
+  tagMaskRules:
+    - key: "status.code"
+      strategyName: "FullStarsMaskStrategy"
+    - key: "response.flag"
+  # ALS
+  jsonContentMaskRules:
+    - path: "/common_properties/downstream_remote_address/socket_address/address"
+      strategyName: "FullStarsMaskStrategy"
+
+#zipkinTrace:
+#  localEndpointIPMask: "true"
+#  remoteEndpointIPMask: "true"
+#  tagMaskRules:
+#    - key: "http.status_code"
+#      strategy: FullStarsMaskStrategy
+#    - key: "response.flag"
+#      strategy: FullStarsMaskStrategy

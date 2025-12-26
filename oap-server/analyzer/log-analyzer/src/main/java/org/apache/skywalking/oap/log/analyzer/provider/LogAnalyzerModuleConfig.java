@@ -22,6 +22,7 @@ import com.google.common.base.Strings;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Set;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
@@ -50,6 +51,12 @@ public class LogAnalyzerModuleConfig extends ModuleConfig {
     @Setter
     private String malFiles;
 
+    @Setter
+    private String logTagMaskKeys;
+
+    @Setter
+    private String jsonLogMaskKeys;
+
     private List<Rule> meterConfigs;
 
     public List<String> lalFiles() {
@@ -70,5 +77,19 @@ public class LogAnalyzerModuleConfig extends ModuleConfig {
         }
 
         return meterConfigs;
+    }
+
+    public Set<String> getLogTagMaskKeys() {
+        if (logTagMaskKeys == null || logTagMaskKeys.isEmpty()) {
+            return Set.of();
+        }
+        return Set.copyOf(Splitter.on(",").trimResults().omitEmptyStrings().splitToList(logTagMaskKeys));
+    }
+
+    public Set<String> getJsonLogMaskKeys() {
+        if (jsonLogMaskKeys == null || jsonLogMaskKeys.isEmpty()) {
+            return Set.of();
+        }
+        return Set.copyOf(Splitter.on(",").trimResults().omitEmptyStrings().splitToList(jsonLogMaskKeys));
     }
 }
